@@ -15,7 +15,11 @@ def encryptPassword(password, count):
 
 
 def getEncryptionSamples(passwords, encryptionCount):
-    samples = [encryptPassword(pw, encryptionCount) for pw in passwords]
+    # samples = [encryptPassword(pw, encryptionCount) for pw in passwords]
+    samples = []
+    for pw in passwords:
+        samples.extend(encryptPassword(pw, encryptionCount))
+    # print(samples)
     return np.asmatrix(samples)
 
 
@@ -64,8 +68,8 @@ def main():
         if count > 10:
             break
         print('Probability of {}: {}'.format(password, pwProbabilities[password]))
-    encryptionSamples = getEncryptionSamples(pwProbabilities.keys(), 1000)
-    print('Encryptions:', encryptionSamples[:5])
+    encryptionSamples = getEncryptionSamples(pwProbabilities.keys()[:10000], 100)
+    print('Encryptions:', encryptionSamples[:10])
 
 
 if __name__ == '__main__':
