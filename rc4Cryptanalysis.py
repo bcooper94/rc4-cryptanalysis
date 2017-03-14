@@ -59,20 +59,8 @@ def generateKeystreamDist(password, count, keyReuses, forceReload=False):
 
 
 def getKeystreamProbabilityDist(keystreamDist):
-    # keystreamProbs = np.ndarray(shape=keystreamDist.shape, dtype=float)
     totalByteCounts = np.sum(keystreamDist, axis=1)
-    # print('total byte counts:', totalByteCounts)
-    # print('Byte counts:', keystreamDist[0])
     keystreamProbs = np.divide(keystreamDist, totalByteCounts[:, None], dtype=float)
-    # print('Result:', result[0])
-
-    # for bytePos, byte in enumerate(keystreamDist):
-    #     keystreamProbs[bytePos] = np.divide(keystreamDist[bytePos],
-    #                                         totalByteCounts[bytePos],
-    #                                         dtype=float)
-        # print('After:', keystreamProbs[bytePos])
-    # print(keystreamProbs[0])
-    # print(np.sum(keystreamProbs[0]))
     return keystreamProbs
 
 
@@ -255,8 +243,25 @@ def graphByteEntropyByByteValue(password, frequencies):
     print('Total: ', total)
 
 
-def basicPTRecoveryAttack(encryptions):
-    pass
+def singleByteBiasEstimateByte(encryptionByteFreqs, keystreamProbDist):
+    byteSize = 256
+    candidateWeights = np.ndarray(shape=(byteSize), dtype=float)
+    candidateDist = np.ndarray(shape=(byteSize), dtype=int)
+
+    for candidateByte in range(byteSize):
+        for keyCandidate in range(byteSize):
+            candidateDist[keyCandidate] = encryptionByteFreqs[candidateByte ^ keyCandidate]
+        candidateWeights[candidateByte] = np.sum(candidateDist * np.log(keystreamProbDist))
+
+    return np.argmax(candidateWeights)
+
+
+def basicPTRecoveryAttack(encryptionByteFreqs, keystreamProbDist):
+    messageLen = encryptionByteFreqs.shape[0]
+    decrypted = bytearray([singleByteBiasEstimateByte(encryptionByteFreqs[cipherPos],
+                                                      keystreamProbDist[cipherPos])
+                           for cipherPos in range(messageLen)])
+    print('Estimated decryption:', decrypted)
 
 
 def main():
@@ -282,16 +287,18 @@ def main():
     # mostCommonPwSamples, password = generateEncryptionDist(mostCommonPws[0], 2 ** 22)
     #
     # # graphByteProbabilities(password, mostCommonPwSamples)
-    # byteProbs = loadByteProbabilities(password)
+    byteProbs = loadByteProbabilities(password)
+    print('ByteProbs:', byteProbs[1])
     # graphByteProbabilitiesByBytePos(password, byteProbs)
     # graphByteFreqsByByteValue(password, byteProbs)
     # graphByteEntropyByByteValue(password, byteProbs)
     # graphEntropyByBytePosition(password, byteProbs)
 
-    keystreamDist = generateKeystreamDist(password, 2 ** 20, 5)
-    # graphKeystreamDistByBytePos(keystreamDist, 1)
-    # graphKeystreamDistByByteValue(keystreamDist, 0)
-    getKeystreamProbabilityDist(keystreamDist)
+    keystreamFreqs = generateKeystreamDist(password, 2 ** 20, 5)
+    # graphKeystreamDistByBytePos(keystreamFreqs, 1)
+    # graphKeystreamDistByByteValue(keystreamFreqs, 0)
+    keystreamProbDist = getKeystreamProbabilityDist(keystreamFreqs)
+    basicPTRecoveryAttack(byteProbs, keystreamProbDist)
 
 
 if __name__ == '__main__':
