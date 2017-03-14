@@ -58,6 +58,24 @@ def generateKeystreamDist(password, count, keyReuses, forceReload=False):
     return keystreamDist
 
 
+def getKeystreamProbabilityDist(keystreamDist):
+    # keystreamProbs = np.ndarray(shape=keystreamDist.shape, dtype=float)
+    totalByteCounts = np.sum(keystreamDist, axis=1)
+    # print('total byte counts:', totalByteCounts)
+    # print('Byte counts:', keystreamDist[0])
+    keystreamProbs = np.divide(keystreamDist, totalByteCounts[:, None], dtype=float)
+    # print('Result:', result[0])
+
+    # for bytePos, byte in enumerate(keystreamDist):
+    #     keystreamProbs[bytePos] = np.divide(keystreamDist[bytePos],
+    #                                         totalByteCounts[bytePos],
+    #                                         dtype=float)
+        # print('After:', keystreamProbs[bytePos])
+    # print(keystreamProbs[0])
+    # print(np.sum(keystreamProbs[0]))
+    return keystreamProbs
+
+
 def graphKeystreamDistByBytePos(keystreamDist, pos):
     plt.plot(keystreamDist[pos, :])
     plt.title('Keystream Byte Frequencies for CT Position {}'.format(pos))
@@ -271,8 +289,9 @@ def main():
     # graphEntropyByBytePosition(password, byteProbs)
 
     keystreamDist = generateKeystreamDist(password, 2 ** 20, 5)
-    graphKeystreamDistByBytePos(keystreamDist, 1)
-    graphKeystreamDistByByteValue(keystreamDist, 0)
+    # graphKeystreamDistByBytePos(keystreamDist, 1)
+    # graphKeystreamDistByByteValue(keystreamDist, 0)
+    getKeystreamProbabilityDist(keystreamDist)
 
 
 if __name__ == '__main__':
