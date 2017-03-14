@@ -12,7 +12,48 @@ TOP_PASSWORDS = 100000
 encryptionSamplePickle = 'encryptedPws.p'
 SINGLE_PW_PICKLE = 'singlePw.p'
 BYTE_DIST_PICKLE = 'byteDist.p'
+KEYSTREAM_DIST_PICKLE = 'keystream.p'
 TLS_FINISH = 'TLS Finished: password='
+
+
+def x_or(byteArrOne, byteArrTwo):
+    # strOneBytes = bytearray(bytes(strOne))
+    # strTwoBytes = bytearray(bytes(strTwo))
+
+    return bytearray(
+        [byteOne ^ byteTwo for byteOne, byteTwo
+         in zip(byteArrOne, byteArrTwo)])
+
+
+def generateKeystreamDist(password, count, keyReuses, forceReload=False):
+    if not forceReload and os.path.isfile(KEYSTREAM_DIST_PICKLE):
+        keystreamDist = pickle.load(open(KEYSTREAM_DIST_PICKLE, 'rb'))
+    else:
+        byteSize = 256
+        message = TLS_FINISH + password
+        messageLen = len(message)
+        messageBytes = bytearray(bytes(message))
+        step = int(count * keyReuses / 10)
+        curStep = step
+        keystreamDist = np.zeros(shape=(messageLen, byteSize), dtype=int)
+
+        for keyCount in range(count):
+            key = rand.read(KEY_SIZE)
+            rc4 = ARC4.new(key)
+
+            for keyReuse in range(keyReuses):
+                if keyCount == curStep:
+                    print('{}% done'.format(100 * curStep / count))
+                    curStep += step
+                encryptedMsg = bytearray(bytes(rc4.encrypt(message)))
+                keystream = x_or(encryptedMsg, messageBytes)
+                for position, byte in enumerate(keystream):
+                    keystreamDist[position][byte] += 1
+
+                # encryptedPws[i] = bytearray(bytes(rc4.encrypt(message)))
+
+        pickle.dump(keystreamDist, open(KEYSTREAM_DIST_PICKLE, 'wb'))
+    return keystreamDist
 
 
 def singlePasswordEncrypt(password, count, forceReload=False):
@@ -152,6 +193,14 @@ def graphByteFreqsByByteValue(password, frequencies):
         plt.show()
 
 
+def graphEntropyByBytePosition(password, frequencies):
+    byteSize = 256
+    messageLen = len(TLS_FINISH + password)
+    expectedCounts = np.mean(frequencies, axis=1)
+    total = np.sum(frequencies, axis=1)
+    print('Expected:', expectedCounts / total)
+    print('Argmax:', np.argmax(frequencies, axis=1))
+
 def getExpectedByteCounts(frequencies):
     return np.mean(frequencies, axis=0)
 
@@ -190,10 +239,17 @@ def main():
     # print('Encrypted samples:', mostCommonPwSamples[:10])
 
     # graphByteProbabilities(password, mostCommonPwSamples)
-    byteProbs = loadByteProbabilities('123456')
-    graphByteProbabilitiesByBytePos('123456', byteProbs)
+    # byteProbs = loadByteProbabilities('123456')
+    # graphByteProbabilitiesByBytePos('123456', byteProbs)
     # graphByteFreqsByByteValue('123456', byteProbs)
-    graphByteEntropyByByteValue('123456', byteProbs)
+    # graphByteEntropyByByteValue('123456', byteProbs)
+    # graphEntropyByBytePosition('123456', byteProbs)
+    keystreamDist = generateKeystreamDist('123456', 2**17, 5)
+    plt.plot(keystreamDist[1, :])
+    axes = plt.gca()
+    axes.set_xlim([-5, 270])
+    plt.show()
+    print(keystreamDist[1, :])
 
 
 if __name__ == '__main__':
