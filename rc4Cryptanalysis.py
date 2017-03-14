@@ -17,6 +17,21 @@ TLS_FINISH = 'TLS Finished: password='
 rand = Random.new()
 
 
+def save(filename, data):
+    print('Pickling to {}'.format(filename))
+    outfile = open(filename, 'wb')
+    pickle.dump(data, outfile)
+    outfile.close()
+
+
+def load(filename):
+    print('Loading {}'.format(filename))
+    inputFile = open(filename, 'rb')
+    data = pickle.load(inputFile)
+    inputFile.close()
+    return data
+
+
 def x_or(byteArrOne, byteArrTwo):
     return bytearray(
         [byteOne ^ byteTwo for byteOne, byteTwo
@@ -27,8 +42,7 @@ def generateKeystreamDist(password, count, keyReuses, forceReload=False):
     pickledFile = '{}_{}'.format(password, KEYSTREAM_DIST_PICKLE)
 
     if not forceReload and os.path.isfile(pickledFile):
-        print('generateKeystreamDist loading pickled file')
-        keystreamDist = pickle.load(open(pickledFile, 'rb'))
+        keystreamDist = load(pickledFile)
     else:
         print('Regenerating keystream distribution')
 
@@ -54,7 +68,7 @@ def generateKeystreamDist(password, count, keyReuses, forceReload=False):
                 for position, byte in enumerate(keystream):
                     keystreamDist[position][byte] += 1
 
-        pickle.dump(keystreamDist, open(pickledFile, 'wb'))
+        save(pickledFile, keystreamDist)
     return keystreamDist
 
 
@@ -82,17 +96,23 @@ def graphKeystreamDistByByteValue(keystreamDist, byteVal):
     plt.show()
 
 
+def _genEncryptionDist(i, message, encryptedPws):
+    key = rand.read(KEY_SIZE)
+    rc4 = ARC4.new(key)
+    encryptedPws[i] = bytearray(bytes(rc4.encrypt(message)))
+
+
 def generateEncryptionDist(password, count, forceReload=False):
     pickledFile = '{}_{}'.format(password, SINGLE_PW_PICKLE)
 
     if not forceReload and os.path.isfile(pickledFile):
         print('generateEncryptionDist loading pickled file')
-        pwEncryptions = pickle.load(open(pickledFile, 'rb'))
+        pwEncryptions = load(pickledFile)
     else:
         print('Regenerating encryption distribution')
         message = TLS_FINISH + password
-        encryptedPws = np.ndarray(shape=(count), dtype=object)
-        step = int(count / 10)
+        encryptedPws = np.ndarray(shape=(count, len(message)), dtype=np.uint8)
+        step = int(count / 100)
         curStep = step
 
         for i in range(count):
@@ -104,7 +124,7 @@ def generateEncryptionDist(password, count, forceReload=False):
             encryptedPws[i] = bytearray(bytes(rc4.encrypt(message)))
 
         pwEncryptions = (encryptedPws, password)
-        pickle.dump(pwEncryptions, open(pickledFile, 'wb'))
+        save(pickledFile, pwEncryptions)
 
     return pwEncryptions
 
@@ -119,23 +139,21 @@ def encryptPassword(password, count):
         rc4 = ARC4.new(key)
         encryptedPws[i][0] = rc4.encrypt(message)
         encryptedPws[i][1] = password
-    # return [[rc4.encrypt(password), password] for i in range(count)]
     return encryptedPws
 
 
 def getEncryptionSamples(passwords, encryptionCount, forceReload=False):
     if not forceReload and os.path.isfile(ENCRYPTIONS_SAMPLE_PICKLE):
         print('loading pickled file')
-        matrix = pickle.load(open(ENCRYPTIONS_SAMPLE_PICKLE, 'rb'))
+        matrix = load(ENCRYPTIONS_SAMPLE_PICKLE)
     else:
         print('getEncryptionSamples regenerating encryption samples')
-        # samples = [encryptPassword(pw, encryptionCount) for pw in passwords]
         samples = []
         for pw in passwords:
             samples.extend(encryptPassword(pw, encryptionCount))
-        # print(samples)
+
         matrix = np.asmatrix(samples)
-        pickle.dump(matrix, open(ENCRYPTIONS_SAMPLE_PICKLE, 'wb'))
+        save(ENCRYPTIONS_SAMPLE_PICKLE, matrix)
     return matrix
 
 
@@ -176,23 +194,24 @@ def getSortedPasswords(passwordProbabilities):
                   key=lambda val: val[1], reverse=True)
 
 
-def loadByteProbabilities(password, pwEncryptions=None):
+def loadByteProbabilities(password, pwEncryptions=None, forceReload=False):
     pickledFile = '{}_{}'.format(password, BYTE_DIST_PICKLE)
     byteSize = 256
     numBytes = len(TLS_FINISH + password)
 
-    if os.path.isfile(pickledFile):
-        print('loadByteProbabilities loading pickled file')
-        frequencies = pickle.load(open(pickledFile, 'rb'))
+    if not forceReload and os.path.isfile(pickledFile):
+        frequencies = load(pickledFile)
     elif pwEncryptions is not None:
         print('loadByteProbabilities regenerating byte frequencies')
-        frequencies = np.zeros(shape=(numBytes, byteSize), dtype=int)
+        frequencies = np.array([np.bincount(pwEncryptions[:, i])
+                                for i in range(pwEncryptions.shape[1])])
+        # frequencies = np.zeros(shape=(numBytes, byteSize), dtype=np.uint)
+        #
+        # for index, encryption in enumerate(pwEncryptions):
+        #     for byteNum, byte in enumerate(encryption):
+        #         frequencies[byteNum][int(byte)] += 1
 
-        for index, encryption in enumerate(pwEncryptions):
-            # print('Encryption len:', len(encryption), encryption)
-            for byteNum, byte in enumerate(encryption):
-                frequencies[byteNum][int(byte)] += 1
-        pickle.dump(frequencies, open(pickledFile, 'wb'))
+        save(pickledFile, frequencies)
     else:
         raise ValueError('No pickled byteDist.p found and pwEncryptions is None')
     return frequencies
@@ -284,11 +303,19 @@ def main():
     # print('Most common pws:', mostCommonPws[:10])
     #
     # # encryptionSamples = getEncryptionSamples(mostCommonPws, 100)
-    # mostCommonPwSamples, password = generateEncryptionDist(mostCommonPws[0], 2 ** 22)
+    # print('PwProbabilities[{}]: {}'.format(password, pwProbabilities[password]))
+    mostCommonPwSamples, password = generateEncryptionDist(password, 2 ** 22)
+    # bincount = np.apply_along_axis(np.bincount, 1, mostCommonPwSamples)
+    # bincount = np.matrix([np.bincount(mostCommonPwSamples[:, i]) for i in range(mostCommonPwSamples.shape[1])])
+    # sums = np.sum(bincount, axis=1)
+    # print('BinCount:', bincount[0])
+    # print('Sums[0]:', sums[0])
     #
     # # graphByteProbabilities(password, mostCommonPwSamples)
-    byteProbs = loadByteProbabilities(password)
-    print('ByteProbs:', byteProbs[1])
+    # byteProbs = loadByteProbabilities(password, mostCommonPwSamples)
+    byteProbs = loadByteProbabilities(password, mostCommonPwSamples, True)
+    # print('Counts equal:', np.array_equal(bincount, byteProbs))
+    # print('ByteProbs:', byteProbs[1])
     # graphByteProbabilitiesByBytePos(password, byteProbs)
     # graphByteFreqsByByteValue(password, byteProbs)
     # graphByteEntropyByByteValue(password, byteProbs)
